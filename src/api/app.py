@@ -1,23 +1,22 @@
+"""
+app.py
+Entry point for the Flask application. 
+Defines the create_app() function which initializes Flask and registers blueprints.
+"""
+
 from flask import Flask
-from .routes import upload, metadata, slice, analyze, statistics
-from ..db.database import init_db
+from .routes import api_bp
 
 def create_app():
+    """Create and configure the Flask app."""
     app = Flask(__name__)
-    
-    # Register blueprints
-    app.register_blueprint(upload.bp)
-    app.register_blueprint(metadata.bp)
-    app.register_blueprint(slice.bp)
-    app.register_blueprint(analyze.bp)
-    app.register_blueprint(statistics.bp)
-    
-    # Initialize database
-    init_db(app)
-    
+
+    # Register the blueprint for our API
+    app.register_blueprint(api_bp, url_prefix='/')
+
     return app
 
-app = create_app()
-
+# For local development/testing:
 if __name__ == '__main__':
+    app = create_app()
     app.run(debug=True)
