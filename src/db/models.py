@@ -1,24 +1,24 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+"""
+models.py
+Defines SQLAlchemy models (tables) for storing image metadata, analysis results, etc.
+"""
 
-Base = declarative_base()
+import datetime
+from sqlalchemy import Column, String, DateTime, JSON
+from .database import Base
 
-class Image(Base):
-    __tablename__ = 'images'
-    
-    id = Column(Integer, primary_key=True)
-    filename = Column(String, nullable=False)
-    filepath = Column(String, nullable=False)
-    dimensions = Column(String, nullable=False)  # Stored as JSON string
-    upload_date = Column(DateTime, default=datetime.utcnow)
-    
-class Statistics(Base):
-    __tablename__ = 'statistics'
-    
-    id = Column(Integer, primary_key=True)
-    image_id = Column(Integer, nullable=False)
-    mean = Column(Float)
-    std = Column(Float)
-    min = Column(Float)
-    max = Column(Float)
+class ImageMetadata(Base):
+    """
+    Stores basic metadata about uploaded images.
+    The 'image_id' matches what we generate upon upload.
+    'shape' is stored as JSON to hold the 5D structure.
+    """
+    __tablename__ = 'image_metadata'
+
+    image_id = Column(String, primary_key=True, index=True)
+    dtype = Column(String, nullable=True)
+    shape = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ImageMetadata(image_id={self.image_id}, dtype={self.dtype}, shape={self.shape})>"
