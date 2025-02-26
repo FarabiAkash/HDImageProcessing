@@ -1,5 +1,11 @@
 Flask
 tifffile
 numpy
-pillow
+Pillow
+scikit-image
 scikit-learn
+SQLAlchemy
+psycopg2-binary
+celery
+redis
+pytest
