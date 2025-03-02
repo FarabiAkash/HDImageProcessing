@@ -17,8 +17,8 @@ IMAGE_STORE = {}
 IMAGE_PROCESSOR_STORE = {}
 
 # Import the individual route modules to register their endpoints on the blueprint
-from .upload import *
-from .metadata import *
-from .slice import *
-from .analyze import *
-from .statistics import *
+from src.api.routes.upload import *
+from src.api.routes.metadata import *
+from src.api.routes.slice import *
+from src.api.routes.analyze import *
+from src.api.routes.statistics import *

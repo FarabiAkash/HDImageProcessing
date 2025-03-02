@@ -1,218 +1,202 @@
-# High-Dimensional Image Processing Microservice
+# Architecture Overview
 
-This repository contains a Python-based microservice for uploading, processing, and analyzing high-dimensional (5D) scientific images. It includes:
+This is a microservice designed to handle 5D scientific images (dimensions typically represent: Time, Z-stack, Channels, Height, Width). The system is built with:
 
-- **Image Processing Core** (Loading 5D TIFF, slicing, PCA, basic stats).
-- **Flask API** (Upload, metadata, slicing, analysis, and stats endpoints).
-- **Database Integration** (Vercel PostgreSQL via SQLAlchemy).
-- **Optional Asynchronous Tasks** (Celery/Redis).
-- **Unit Tests** (Pytest coverage for API, core, and DB).
+1. Flask API (Frontend)
+2. Core Processing Engine
+3. PostgreSQL Database (via Vercel)
+4. Optional Celery/Redis for async tasks
 
-## Table of Contents
+# API Flow and Usage
 
-- [Project Structure](#project-structure)
-- [Requirements](#requirements)
-- [Installation & Setup](#installation--setup)
-  - [Environment Variables](#environment-variables)
-  - [Database Setup](#database-setup)
-- [Running the Application](#running-the-application)
-  - [Local Development](#local-development)
-  - [Docker Container (Optional)](#docker-container-optional)
-- [Using the API](#using-the-api)
-  - [Endpoint Reference](#endpoint-reference)
-  - [Example Requests](#example-requests)
-- [Testing](#testing)
-- [Asynchronous Tasks (Optional)](#asynchronous-tasks-optional)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
+## 1. First Step: Upload an Image
 
----
+The first API you must call is the upload endpoint:
 
-## Project Structure
-
-```text
-project_root/
-├── README.md
-├── requirements.txt
-├── data/
-│   └── sample_5d_image.tif  # Example data (optional)
-├── notebooks/
-│   └── demonstration.ipynb  # Jupyter Notebook demo
-├── src/
-│   ├── __init__.py
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── app.py
-│   │   ├── routes/
-│   │   │   ├── __init__.py
-│   │   │   ├── upload.py
-│   │   │   ├── metadata.py
-│   │   │   ├── slice.py
-│   │   │   ├── analyze.py
-│   │   │   └── statistics.py
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── image_processor.py
-│   │   └── segmentation.py
-│   ├── db/
-│   │   ├── __init__.py
-│   │   ├── database.py
-│   │   └── models.py
-│   ├── tasks/
-│   │   ├── __init__.py
-│   │   ├── celery_app.py
-│   │   └── async_tasks.py
-│   └── utils/
-│       ├── __init__.py
-│       ├── file_validation.py
-│       ├── chunk_io.py
-│       └── pca_utils.py
-└── tests/
-    ├── __init__.py
-    ├── test_api/
-    │   ├── test_upload.py
-    │   ├── test_metadata.py
-    │   ├── test_slice.py
-    │   ├── test_analyze.py
-    │   └── test_statistics.py
-    ├── test_core/
-    │   ├── test_image_processor.py
-    │   ├── test_segmentation.py
-    │   └── test_pca_utils.py
-    └── test_db/
-        └── test_database.py
-
+```bash
+POST /upload
+Content-Type: multipart/form-data
+Body: file=@your_5d_image.tif
 ```
 
-## Requirements
+This endpoint will:
 
-- **Python 3.8+**
-- The following Python libraries (see requirements.txt):
+- Validate the TIFF file
+- Store it in the system
+- Return an `image_id` that you'll use for all subsequent operations
 
-  - Flask
-  - tifffile
-  - numpy
-  - Pillow
-  - scikit-image
-  - scikit-learn
-  - SQLAlchemy
-  - psycopg2-binary
-  - celery
-  - redis
-  - pytest
+Expected response:
 
-- **PostgreSQL** (Vercel Postgres recommended).
-- **Redis** (optional, if running Celery for asynchronous tasks).
+```json
+{
+  "message": "File uploaded successfully",
+  "image_id": "image_1"
+}
+```
 
-## Installation & Setup
+## 2. Check Image Metadata
 
-1.  bashCopyEditgit clone https://github.com/YourUser/highdim-image-processor.gitcd highdim-image-processor
-2.  bashCopyEditpython -m venv venvsource venv/bin/activate # On macOS/Linux# orvenv\\Scripts\\activate.bat # On Windows
-3.  bashCopyEditpip install -r requirements.txt
+After upload, you can verify the image dimensions:
 
-### Environment Variables
+```bash
+GET /metadata?image_id=image_1
+```
 
-Set the following environment variables as needed:
+You'll receive:
 
-- bashCopyEditexport VERCEL_POSTGRES_URL=postgresql://:@:/
-- bashCopyEditexport CELERY_BROKER_URL=redis://localhost:6379/0
-- bashCopyEditexport CELERY_RESULT_BACKEND=redis://localhost:6379/0
+```json
+{
+  "dtype": "uint16",
+  "shape": [10, 5, 3, 512, 512], // [Time, Z, Channels, Height, Width]
+  "Z": 10,
+  "T": 5,
+  "Channels": 3,
+  "Height": 512,
+  "Width": 512
+}
+```
 
-### Database Setup
+## 3. Working with the Image
 
-1.  bashCopyEditpython -c "from src.db.database import Base, engine; Base.metadata.create_all(bind=engine)"This will create any tables defined in src/db/models.py.
-2.  **(Optional)** Use migrations via Alembic if you want to manage schema changes over time.
+### a. Get 2D Slices
 
-## Running the Application
+To visualize specific planes:
 
-### Local Development
+```bash
+GET /slice?image_id=image_1&z=0&time=0&channel=0
+```
 
-1.  bashCopyEditcd src/apipython app.pyBy default, this will run on http://127.0.0.1:5000.
-2.  **Verify** that you can connect to the DB:
+Returns: A PNG image of the specified slice
 
-    - Check logs for any errors about database connections.
-    - Ensure VERCEL_POSTGRES_URL is correct.
+### b. Run Analysis
 
-### Docker Container (Optional)
+For dimensional reduction or feature extraction:
 
-If you prefer a container-based deployment:
+```bash
+POST /analyze
+Content-Type: application/json
+{
+    "image_id": "image_1",
+    "components": 2
+}
+```
 
-1.  dockerfileCopyEditFROM python:3.9-slimWORKDIR /appCOPY . /appRUN pip install --no-cache-dir -r requirements.txtENV VERCEL_POSTGRES_URL=EXPOSE 5000CMD \["python", "src/api/app.py"\]
-2.  bashCopyEditdocker build -t highdim-processor .docker run -p 5000:5000 highdim-processor
-3.  **Access** via http://localhost:5000.
+Returns PCA results:
 
-## Using the API
+```json
+{
+    "image_id": "image_1",
+    "n_components": 2,
+    "pca_result": [[...]]
+}
+```
 
-### Endpoint Reference
+### c. Get Statistics
 
-1.  **POST /upload**
+For basic image statistics:
 
-    - Uploads a multi-dimensional TIFF file.
-    - **Form Data**: file => TIF/TIFF file.
-    - **Response**: {"message": "...", "image_id": "..."}
+```bash
+GET /statistics?image_id=image_1
+```
 
-2.  **GET /metadata**
+Returns:
 
-    - Retrieves metadata for the uploaded image.
-    - **Query Params**: image_id=...
-    - **Response**: {"dtype": "...", "shape": \[...\], "Z": ..., "T": ..., "Channels": ..., "Height": ..., "Width": ...}
+```json
+{
+  "mean": [45.3, 61.8, 120.2], // per channel
+  "std": [14.2, 18.7, 35.1],
+  "min": [0, 0, 0],
+  "max": [255, 255, 255]
+}
+```
 
-3.  **GET /slice**
+# Key Components
 
-    - Returns a 2D slice (PNG image).
-    - **Query Params**: image_id=..., z=..., time=..., channel=...
-    - **Response**: Binary PNG file
+## 1. Core Processing Engine
 
-4.  **POST /analyze**
+- Located in `src/core/image_processor.py`
+- Handles TIFF loading, slicing, and analysis
+- Uses libraries like tifffile, numpy, scikit-image
 
-    - Runs PCA (or other analysis) on the image.
-    - **JSON Body**: {"image_id": "...", "components": ...}
-    - **Response**: {"image_id": "...", "n_components": ..., "pca_result": \[...\]}
+## 2. Database Integration
 
-5.  **GET /statistics**
+- Uses SQLAlchemy with Vercel PostgreSQL
+- Stores metadata and processing results
+- Image data can be stored in filesystem or cloud storage
 
-    - Returns basic stats (mean, std, min, max) by channel.
-    - **Query Params**: image_id=...
-    - **Response**: {"mean": \[...\], "std": \[...\], "min": \[...\], "max": \[...\]}
+## 3. Asynchronous Processing (Optional)
 
-### Example Requests
+For heavy operations:
 
-Assuming your service is at http://localhost:5000, here are some curl commands:
+```python
+# In your code
+from src.tasks.async_tasks import heavy_pca
+result = heavy_pca.delay(image_id="image_1", n_components=3)
+```
 
-1.  bashCopyEditcurl -X POST -F file=@path/to/5d_image.tif http://localhost:5000/upload**Sample Response**:jsonCopyEdit{ "message": "File uploaded successfully", "image_id": "image_1"}
-2.  bashCopyEditcurl "http://localhost:5000/metadata?image_id=image_1"**Sample Response**:jsonCopyEdit{ "dtype": "uint16", "shape": \[10, 5, 3, 512, 512\], "Z": 10, "T": 5, "Channels": 3, "Height": 512, "Width": 512}
-3.  bashCopyEditcurl "http://localhost:5000/slice?image_id=image_1&z=0&time=0&channel=0" --output slice.png
+# Setup Requirements
 
-    - Downloads a 2D slice as slice.png.
+1. Environment Variables:
 
-4.  bashCopyEditcurl -X POST -H "Content-Type: application/json" \\ -d '{"image_id": "image_1", "components": 2}' \\ http://localhost:5000/analyze**Sample Response**:jsonCopyEdit{ "image_id": "image_1", "n_components": 2, "pca_result": \[ \[ \[ ... \] \] \]}
-5.  bashCopyEditcurl "http://localhost:5000/statistics?image_id=image_1"**Sample Response**:jsonCopyEdit{ "mean": \[ 45.3, 61.8, 120.2 \], "std": \[ 14.2, 18.7, 35.1 \], "min": \[ 0, 0, 0 \], "max": \[ 255, 255, 255 \]}
+```bash
+export VERCEL_POSTGRES_URL=postgresql://:@:/
+export CELERY_BROKER_URL=redis://localhost:6379/0  # if using Celery
+export CELERY_RESULT_BACKEND=redis://localhost:6379/0  # if using Celery
+```
 
-## Testing
+2. Dependencies:
 
-This project uses **Pytest** for all tests (API, core, and DB). To run the test suite:
+```bash
+pip install -r requirements.txt
+```
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`  bashCopyEditpytest  `
+3. Database Setup:
 
-- bashCopyEditpip install pytest-covpytest --cov=src --cov-report=term-missing
-- Tests are organized by functionality in tests/test_api/, tests/test_core/, tests/test_db/.
+```bash
+python -c "from src.db.database import Base, engine; Base.metadata.create_all(bind=engine)"
+```
 
-## Asynchronous Tasks (Optional)
+# Best Practices
 
-If you choose to run heavy operations asynchronously:
+1. **Error Handling**: All endpoints include proper error handling for:
 
-1.  bashCopyEditredis-server
-2.  bashCopyEditcelery -A src.tasks.celery_app.celery worker --loglevel=info
-3.  pythonCopyEditfrom src.tasks.async_tasks import heavy_pcaheavy_pca.delay(image_id="image_1", n_components=3)
+   - Invalid image formats
+   - Missing files
+   - Out-of-range parameters
+   - Database connection issues
 
-## Troubleshooting
+2. **Memory Management**: For large images:
 
-- **Database Connection Errors**: Ensure VERCEL_POSTGRES_URL is set correctly. Double-check your credentials and network access.
-- **TIFF Loading Errors**: Verify that the TIFF files are truly multi-dimensional. The tifffile library might throw warnings if the file format is unusual.
-- **Out-of-Memory**: For very large images, consider chunked I/O (see src/utils/chunk_io.py), or a cluster-based approach to distribute tasks.
+   - Use chunked I/O operations
+   - Consider using async processing
+   - Implement proper cleanup
 
-## License
+3. **Testing**:
+   ```bash
+   pytest  # Run all tests
+   pytest --cov=src --cov-report=term-missing  # With coverage
+   ```
 
-This project is provided under the MIT License. You are free to modify and distribute it as long as you include the license notice.
+# Common Use Cases
 
-**Thank you for using the High-Dimensional Image Processing Microservice!** If you have any questions or suggestions, feel free to open an issue or contribute directly to the repository.
+1. **Scientific Image Analysis**:
+
+   ```python
+   # Upload image
+   image_id = upload_image("microscopy_data.tif")
+
+   # Get middle slice
+   middle_slice = get_slice(image_id, z=5, t=0, channel=0)
+
+   # Run PCA
+   pca_results = analyze_image(image_id, components=3)
+   ```
+
+2. **Batch Processing**:
+   ```python
+   # Using async tasks
+   for image in image_list:
+       heavy_pca.delay(image_id=image, n_components=3)
+   ```
+
+This microservice is designed to be scalable and can be deployed either as a standalone service or as part of a larger system. The modular architecture allows for easy extensions and modifications based on specific needs.

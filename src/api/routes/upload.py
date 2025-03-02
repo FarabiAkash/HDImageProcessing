@@ -23,7 +23,7 @@ def upload_image():
         return jsonify({"error": "No selected file"}), 400
 
     # Generate a simple ID or use a UUID in practice
-    image_id = "image_1"  # Hardcoded for example; you can generate unique IDs
+    image_id = f"image_{len(IMAGE_STORE) + 1}"  # Generate unique ID based on store size
 
     # Read file bytes directly
     file_bytes = file.read()

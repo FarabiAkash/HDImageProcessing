@@ -25,6 +25,10 @@ class ImageProcessor:
         """
         self.image_data = self._load_tiff_from_bytes(image_bytes)  # shape = (Z, T, C, H, W)
         self.metadata = self._extract_metadata()
+        # Determine if the image is 4D or 5D
+        self.dims = len(self.image_data.shape)
+        if self.dims not in [4, 5]:
+            raise ValueError("Image must be 4D (T,C,H,W) or 5D (Z,T,C,H,W)")
 
     def _load_tiff_from_bytes(self, image_bytes):
         """
@@ -81,35 +85,89 @@ class ImageProcessor:
 
     def get_slice(self, z, t, c):
         """
-        Extracts a 2D slice at the specified Z, Time, and Channel.
-        Returns a NumPy 2D array (Height x Width).
+        Extract a 2D slice from the image data.
+        Args:
+            z (int): Z-index (ignored for 4D images)
+            t (int): Time index
+            c (int): Channel index
+        Returns:
+            2D numpy array (H,W)
         """
-        # Validate indices
-        Z, T, C, H, W = self.image_data.shape
-        if not (0 <= z < Z and 0 <= t < T and 0 <= c < C):
-            raise ValueError(f"Invalid slice indices z={z}, t={t}, c={c}")
-
-        slice_2d = self.image_data[z, t, c, :, :]  # shape = (H, W)
-        return slice_2d
+        if self.dims == 5:
+            return self.image_data[z, t, c, :, :]
+        else:  # 4D image
+            return self.image_data[t, c, :, :]
 
     def run_pca(self, n_components=3):
         """
-        Runs PCA on the entire image data to reduce the channel dimension 
-        or flatten some of the dimensions, depending on the use-case.
-
-        Strategy:
-        1) Flatten the (Z, T) dimensions + (H, W) dimensions and only keep the channel dimension, or 
-        2) Flatten everything except channels, depending on how you want to apply PCA.
-
-        For demonstration, we flatten everything except the channel dimension 
-        and then do PCA across channels. This is somewhat naive but shows the concept.
+        Runs PCA on the image data to reduce the channel dimension.
+        Works with both 4D (T,C,H,W) and 5D (Z,T,C,H,W) images.
+        
+        Args:
+            n_components (int): Number of PCA components to compute
+        
+        Returns:
+            numpy.ndarray: PCA result reshaped to original dimensions 
+            but with C replaced by n_components
         """
-        Z, T, C, H, W = self.image_data.shape
-        # Reshape to (Z*T*H*W, C)
-        reshaped = self.image_data.reshape(-1, C).astype(np.float32)
+        if self.dims == 5:
+            Z, T, C, H, W = self.image_data.shape
+            # Reshape to (Z*T*H*W, C)
+            reshaped = self.image_data.reshape(-1, C)
+        else:  # 4D image
+            T, C, H, W = self.image_data.shape
+            # Reshape to (T*H*W, C)
+            reshaped = self.image_data.reshape(-1, C)
+
+        # Convert to float32 for PCA
+        reshaped = reshaped.astype(np.float32)
 
         # Fit PCA on the flattened data
         pca = PCA(n_components=n_components)
-        pca_result = pca.fit_transform(reshaped)  # shape => (Z*T*H*W, n_components)
+        pca_result = pca.fit_transform(reshaped)
 
-        # Reshape back to (Z, T, H, W, 
+        # Reshape back to original dimensions with new n_components
+        if self.dims == 5:
+            return pca_result.reshape(Z, T, H, W, n_components)
+        else:  # 4D image
+            return pca_result.reshape(T, H, W, n_components)
+
+    def get_statistics(self):
+        """
+        Calculates basic statistics for each channel across all Z and T dimensions.
+        Works with both 4D and 5D images.
+        
+        Returns:
+            dict: Statistics per channel including mean, std, min, max
+        """
+        if self.dims == 5:
+            Z, T, C, H, W = self.image_data.shape
+            # Reshape to combine Z, T, H, W dimensions
+            reshaped = self.image_data.reshape(-1, C).T  # Shape: (C, Z*T*H*W)
+        else:  # 4D image
+            T, C, H, W = self.image_data.shape
+            # Reshape to combine T, H, W dimensions
+            reshaped = self.image_data.reshape(-1, C).T  # Shape: (C, T*H*W)
+
+        stats = {
+            "per_channel": [],
+            "global": {
+                "min": float(self.image_data.min()),
+                "max": float(self.image_data.max()),
+                "mean": float(self.image_data.mean()),
+                "std": float(self.image_data.std())
+            }
+        }
+
+        # Calculate statistics for each channel
+        for i in range(reshaped.shape[0]):
+            channel_data = reshaped[i]
+            stats["per_channel"].append({
+                "channel": i,
+                "min": float(channel_data.min()),
+                "max": float(channel_data.max()),
+                "mean": float(channel_data.mean()),
+                "std": float(channel_data.std())
+            })
+
+        return stats
